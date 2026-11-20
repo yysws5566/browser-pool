@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BrowserPool 浏览器池 · 指挥中心</title>
+<style>
+  :root{
+    --bg:#0a0e14; --card:#10151d; --card2:#151b25; --line:#1f2937; --line2:#2b3648;
+    --txt:#dbe4f0; --dim:#728096; --dim2:#4b5563;
+    --cy:#22d3ee; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      linear-gradient(rgba(34,211,238,.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,211,238,.028) 1px, transparent 1px),
+      radial-gradient(1200px 500px at 70% -10%, rgba(34,211,238,.06), transparent),
+      var(--bg);
+    background-size:34px 34px, 34px 34px, auto, auto;
+    color:var(--txt);
+    font:13px/1.55 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  }
+  .num{font-family:Consolas,"Cascadia Mono",monospace;font-variant-numeric:tabular-nums}
+
+  /* ── 顶部指挥条 ── */
+  header{
+    position:sticky;top:0;z-index:20;
+    background:rgba(10,14,20,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+    padding:12px 20px 10px;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .brand h1{font-size:15px;margin:0;letter-spacing:1px;font-weight:600}
+  .brand h1 b{color:var(--cy);font-weight:700}
+  .brand .sub{font-size:11px;color:var(--dim)}
+  .kpis{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:stretch}
+  .kpi{
+    border:1px solid var(--line);border-radius:8px;background:var(--card);
+    padding:6px 14px;min-width:104px;display:flex;flex-direction:column;justify-content:center;
+  }
+  .kpi .v{font-size:24px;line-height:1.15;font-weight:700}
+  .kpi .v small{font-size:12px;color:var(--dim);font-weight:400;margin-left:2px}
+  .kpi .l{font-size:11px;color:var(--dim);letter-spacing:.5px}
+  .kpi.on{border-color:rgba(52,211,153,.45)}
+  .kpi.on .v{color:var(--ok);text-shadow:0 0 14px rgba(52,211,153,.45)}
+  .kpi.cy .v{color:var(--cy)}
+  .kpi.warn .v{color:var(--warn)}
+  .kpi.off .v{color:var(--dim2)}
+  .grow{flex:1}
+  .hd-right{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px}
+  .dotline{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--dim2)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 1.6s infinite}
+  .dot.off{background:var(--bad)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  button{
+    background:#18202c;color:var(--txt);border:1px solid var(--line2);border-radius:6px;
+    padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit
+  }
+  button:hover{border-color:var(--cy);color:var(--cy)}
+
+  /* ── 区块标题 ── */
+  main{padding:16px 20px 40px;max-width:1500px;margin:0 auto}
+  .sect{display:flex;align-items:center;gap:10px;margin:6px 0 10px}
+  .sect .bar{width:4px;height:16px;border-radius:2px;background:var(--ok);box-shadow:0 0 8px rgba(52,211,153,.6)}
+  .sect.dead .bar{background:var(--dim2);box-shadow:none}
+  .sect h2{font-size:13px;margin:0;letter-spacing:1px;color:var(--txt)}
+  .sect .cnt{font-size:11px;color:var(--dim)}
+  .sect .grow{flex:1}
+
+  /* ── 运行中卡片 ── */
+  #liveGrid,#deadList{display:grid;gap:12px}
+  #liveGrid{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}
+  .live{
+    border:1px solid rgba(52,211,153,.4);border-radius:10px;background:linear-gradient(160deg, rgba(52,211,153,.05), transparent 40%), var(--card);
+    box-shadow:0 0 0 1px rgba(52,211,153,.08), 0 0 18px rgba(52,211,153,.07);
+    display:flex;flex-direction:column;overflow:hidden;position:relative
+  }
+  .live::before{content:"";position:absolute;inset:0 0 auto 0;height:2px;
+    background:linear-gradient(90deg, transparent, var(--ok), transparent);opacity:.7}
+  .lhead{padding:10px 14px 6px;display:flex;align-items:flex-start;gap:8px}
+  .ldot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);
+    margin-top:5px;animation:pulse 1.6s infinite;flex:none}
+  .ltitle{font-size:14px;font-weight:600;flex:1;word-break:break-all;line-height:1.35}
+  .lmeta{padding:0 14px;font-size:11px;color:var(--dim);display:flex;gap:12px;flex-wrap:wrap}
+  .lmeta b{color:#93a4bc;font-weight:500}
+  .llog{height:72px;overflow-y:auto;overflow-x:hidden;margin-top:4px}
+  .llog::-webkit-scrollbar{width:6px}
+  .llog::-webkit-scrollbar-thumb{background:#2b3648;border-radius:3px}
+  .lrow{display:grid;grid-template-columns:62px 60px 1fr;gap:8px;padding:0 14px;font-size:11.5px;height:24px;line-height:24px;align-items:center}
+  .lrow:hover{background:var(--card2)}
+  .lt{color:var(--dim2)}
+  .la{font-size:10px;text-align:center;border-radius:3px;border:1px solid var(--line);color:var(--dim)}
+  .a-copy{color:var(--cy);border-color:#164e63} .a-paste{color:var(--ok);border-color:#14532d}
+  .a-cut{color:var(--warn);border-color:#78350f} .a-date,.a-open-date{color:#c084fc;border-color:#4c1d95}
+  .a-input{color:#67e8f9;border-color:#155e75} .a-select,.a-check{color:var(--warn);border-color:#78350f}
+  .a-load,.a-leave{color:var(--dim2)} .a-click{color:#94a3b8}
+  .a-attach{color:var(--cy);border-color:#164e63} .a-recycle,.a-recycle-tab{color:var(--warn);border-color:#78350f}
+  .lv{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c7d2e2}
+  .lv.none{color:#3f4a5c;font-style:italic}
+  .lfoot{border-top:1px solid var(--line);padding:7px 14px;display:flex;align-items:center;background:rgba(10,14,20,.5)}
+  .lfoot .st{font-size:11px;color:var(--dim);flex:1}
+  .lfoot button{padding:3px 10px;font-size:11px}
+
+  /* ── 已结束（收起变暗） ── */
+  details.dead{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}
+  details.dead summary{
+    padding:10px 14px;cursor:pointer;font-size:12px;color:var(--dim);list-style:none;
+    display:flex;align-items:center;gap:8px;user-select:none
+  }
+  details.dead summary::-webkit-details-marker{display:none}
+  details.dead summary:hover{color:var(--txt)}
+  details.dead summary .n{color:var(--txt)}
+  .drow{
+    display:grid;grid-template-columns:90px 1fr 90px 70px;gap:10px;align-items:center;
+    padding:7px 14px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);opacity:.85
+  }
+  .drow .dn{color:#aab8cc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drow .dl{display:grid;grid-template-columns:62px 60px 1fr;gap:8px;padding:0 14px;font-size:11.5px;height:24px;line-height:24px;align-items:center;border-top:1px dashed var(--line)}
+
+  .empty{
+    border:1px dashed var(--line2);border-radius:10px;padding:26px;text-align:center;color:var(--dim2);font-size:12px
+  }
+  details.apps{margin-top:22px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  details.apps summary{padding:9px 14px;cursor:pointer;font-size:12px;color:var(--dim)}
+  details.apps summary:hover{color:var(--txt)}
+  .applist{display:flex;gap:8px;flex-wrap:wrap;padding:4px 14px 14px}
+  .app{border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12px;text-decoration:none;color:var(--txt);background:var(--card2)}
+  .app:hover{border-color:var(--cy);color:var(--cy)}
+  .app i{font-style:normal;color:var(--dim);font-size:11px;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>BROWSER<b>POOL</b> 浏览器池 · 指挥中心</h1>
+    <span class="sub" id="pTick">—</span>
+    <span class="grow"></span>
+    <button onclick="tick()">刷新</button>
+  </div>
+  <div class="kpis">
+    <div class="kpi on"><div class="v num" id="kLive">0</div><div class="l">在跑任务</div></div>
+    <div class="kpi cy"><div class="v num" id="kInst">0<small>例</small></div><div class="l">登记实例</div></div>
+    <div class="kpi" id="kWatchBox"><div class="v" id="kWatch"><span class="dot off"></span></div><div class="l">收纳守护</div></div>
+    <div class="kpi"><div class="v num" id="kRecycle">30<small>/15分</small></div><div class="l">空闲回收 实例/tab</div></div>
+    <div class="kpi"><div class="v num" id="kWhite">2</div><div class="l">白名单端口</div></div>
+    <span class="grow"></span>
+    <div class="hd-right">
+      <span class="dotline"><span class="dot off" id="pRunDot"></span><span id="pRun">0 / 0 实例在线</span></span>
+      <span class="dotline" style="color:var(--dim2)">面板 PID <span class="num" id="pPid">—</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="sect"><span class="bar"></span><h2>运行中</h2><span class="cnt" id="liveCnt"></span></div>
+  <div id="liveGrid"></div>
+
+  <div class="sect dead" style="margin-top:22px"><span class="bar"></span><h2>已结束</h2><span class="cnt" id="deadCnt"></span></div>
+  <div id="deadList"></div>
+
+  <details class="apps" id="more">
+    <summary>网页入口</summary>
+    <div class="applist" id="apps"></div>
+  </details>
+</main>
+
+<script>
+var ACT_CN = {
+  'copy':'复制','paste':'粘贴','cut':'剪切','date':'选日期','open-date':'开日期',
+  'input':'输入','select':'下拉','click':'点击','check':'勾选','load':'打开','leave':'离开',
+  'attach':'收纳','recycle':'回收','recycle-tab':'收页'
+};
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function hhmmss(s){
+  var m = String(s || '').match(/T?(\d{2}:\d{2}:\d{2})/);
+  return m ? m[1] : String(s || '').slice(-8);
+}
+function hhmm(s){
+  var m = String(s || '').match(/T?(\d{2}:\d{2})/);
+  return m ? m[1] : '';
+}
+function dur(a, b){
+  var t1 = Date.parse(a), t2 = Date.parse(b);
+  if (isNaN(t1) || isNaN(t2)) return '';
+  var sec = Math.max(0, Math.round((t2 - t1) / 1000));
+  if (sec < 60) return sec + ' 秒';
+  if (sec < 3600) return Math.round(sec / 60) + ' 分';
+  return (sec / 3600).toFixed(1) + ' 时';
+}
+
+function logRows(items){
+  var out = '';
+  (items || []).forEach(function(e){
+    var a = String(e.act || '').toLowerCase();
+    var txt = e.text ? esc(e.text) : '<span class="lv none">（无内容）</span>';
+    out += '<div class="lrow" title="' + esc(e.ts + ' ' + (e.url||'')) + '">' +
+             '<span class="lt num">' + esc(hhmmss(e.ts)) + '</span>' +
+             '<span class="la a-' + esc(a) + '">' + esc(ACT_CN[a] || a) + '</span>' +
+             '<span class="lv">' + txt + '</span>' +
+           '</div>';
+  });
+  return out;
+}
+
+function liveCard(t){
+  var port = '', i;
+  for (i = 0; i < (window.__running||[]).length; i++){
+    if (window.__running[i].name === t.instance){ port = window.__running[i].port; break; }
+  }
+  var items = t.items || [];
+  var body = items.length
+    ? '<div class="llog">' + logRows(items) + '</div>'
+    : '<div class="empty" style="padding:14px">这个任务还没有操作记录</div>';
+  var last = items.length ? hhmmss(items[0].ts) : '—';
+  return '<div class="live">' +
+      '<div class="lhead"><span class="ldot"></span>' +
+        '<div class="ltitle">' + esc(t.name || t.instance) + '</div></div>' +
+      '<div class="lmeta">' +
+        '<span>实例 <b>' + esc(t.instance) + '</b></span>' +
+        (port ? '<span>端口 <b class="num">' + esc(port) + '</b></span>' : '') +
+        '<span>已记 <b class="num">' + items.length + '</b> 步</span>' +
+        '<span>持续 <b>' + esc(dur(t.firstTs, t.lastTs) || '—') + '</b></span>' +
+      '</div>' + body +
+      '<div class="lfoot"><span class="st">最近动作 ' + last + '</span>' +
+        '<button onclick="showWin(\'' + esc(t.instance) + '\')">打开浏览器</button></div>' +
+    '</div>';
+}
+
+function deadBlock(tasks){
+  var rows = '';
+  tasks.forEach(function(t){
+    var items = t.items || [];
+    rows += '<div class="drow"><span class="num">' + esc(hhmm(t.lastTs) || '—') + '</span>' +
+      '<span class="dn">' + esc(t.name || t.instance) + ' <span style="color:var(--dim2)">· ' + esc(t.instance) + '</span></span>' +
+      '<span class="num">' + items.length + ' 步</span>' +
+      '<span>' + esc(dur(t.firstTs, t.lastTs) || '—') + '</span></div>';
+    if (items.length) rows += '<div class="dl" style="margin:0 0 6px">' + logRows(items.slice(0, 5)) + '</div>';
+  });
+  return rows;
+}
+
+function render(d){
+  window.__running = d.running || [];
+  var tasks = (d.tasks || []).slice();
+  var run = d.running || [];
+  var liveIds = {};
+  run.forEach(function(it){ if (it.alive && it.taskId) liveIds[it.taskId] = 1; });
+  var have = {};
+  tasks.forEach(function(t){ have[t.id] = 1; });
+  run.forEach(function(it){
+    if (it.alive && it.taskId && !have[it.taskId]){
+      tasks.unshift({ id: it.taskId, name: it.task || it.name, instance: it.name,
+                      firstTs: '', lastTs: '', count: 0, items: [], _empty: true });
+      liveIds[it.taskId] = 1;
+    }
+  });
+
+  var live = [], dead = [];
+  tasks.forEach(function(t){ if (liveIds[t.id]) live.push(t); else dead.push(t); });
+
+  var lg = document.getElementById('liveGrid');
+  if (live.length){ lg.innerHTML = live.map(liveCard).join(''); }
+  else { lg.innerHTML = '<div class="empty">现在没有在跑的任务。<br>Agent 的任务起浏览器后，这里会亮起一张实时卡片。</div>'; }
+  document.getElementById('liveCnt').textContent = live.length + ' 个';
+
+  var dl = document.getElementById('deadList');
+  if (dead.length){
+    dl.innerHTML = '<details class="dead"><summary>▸ 展开已结束任务（<span class="n num">' + dead.length + '</span>）</summary>' + deadBlock(dead) + '</details>';
+  } else { dl.innerHTML = '<div class="empty" style="padding:12px">今天还没有已结束的任务</div>'; }
+  document.getElementById('deadCnt').textContent = dead.length + ' 个';
+}
+
+var lastData = null;
+function tick(){
+  fetch('/api/activity?limit=800').then(function(r){ return r.json(); }).then(function(d){
+    if (!d || !d.ok) return;
+    lastData = d;
+    render(d);
+    var run = d.running || [];
+    var alive = run.filter(function(x){ return x.alive; }).length;
+    document.getElementById('kLive').textContent = document.querySelectorAll('.live').length || alive;
+    document.getElementById('kInst').innerHTML = run.length + '<small>例</small>';
+    var w = d.watch || {};
+    var wb = document.getElementById('kWatchBox');
+    wb.className = 'kpi ' + (w.alive ? 'on' : 'warn');
+    document.getElementById('kWatch').innerHTML = w.alive
+      ? '<span class="dot on"></span>在线'
+      : (w.adopt === false ? '只回收' : '<span class="dot off"></span>离线');
+    document.getElementById('kRecycle').innerHTML =
+      (w.idleMin != null ? w.idleMin : 30) + '<small>/' + (w.tabIdleMin != null ? w.tabIdleMin : 15) + '分</small>';
+    document.getElementById('kWhite').textContent = (d.whitelistN != null ? d.whitelistN : 2);
+    document.getElementById('pPid').textContent = d.panelPid || '—';
+    document.getElementById('pRun').textContent = alive + ' / ' + run.length + ' 实例在线';
+    document.getElementById('pRunDot').className = 'dot ' + (alive ? 'on' : 'off');
+    document.getElementById('pTick').textContent = new Date().toTimeString().slice(0, 8);
+  }).catch(function(){
+    document.getElementById('pRun').textContent = '面板离线';
+    document.getElementById('pRunDot').className = 'dot off';
+  });
+}
+
+function showWin(name){
+  fetch('/api/farm?act=show&name=' + encodeURIComponent(name))
+    .then(function(r){ return r.json(); })
+    .then(function(d){ if (!d.ok) alert('打开失败：' + (d.error || '')); })
+    .catch(function(){ alert('打开失败'); });
+}
+
+function renderApps(items){
+  var box = document.getElementById('apps');
+  var html = '';
+  (items || []).forEach(function(a){
+    var st = a.open ? '已打开' : (a.live ? '实例在跑·页面没开' : '实例没起');
+    html += '<a class="app" href="#" data-app="' + esc(a.app) + '">' + esc(a.app) + '<i>' + st + '</i></a>';
+  });
+  box.innerHTML = html || '<span style="color:var(--dim);font-size:12px">还没有登记后台</span>';
+  Array.prototype.forEach.call(box.querySelectorAll('.app'), function(el){
+    el.onclick = function(ev){
+      ev.preventDefault();
+      var i = el.querySelector('i');
+      i.textContent = '正在打开…';
+      fetch('/api/farm?act=openapp&app=' + encodeURIComponent(el.dataset.app))
+        .then(function(r){ return r.json(); })
+        .then(function(d){ i.textContent = d.ok ? '已打开' : ('失败：' + (d.error || '')); })
+        .catch(function(){ i.textContent = '打开失败'; });
+    };
+  });
+}
+document.getElementById('more').addEventListener('toggle', function(){
+  if (this.open) fetch('/api/apps').then(function(r){ return r.json(); }).then(function(d){ renderApps(d.items); }).catch(function(){});
+});
+
+tick();
+// 面板开着就告诉服务端一声：窗口已在，别再开第二个
+function beat(){ try { fetch('/api/heartbeat').catch(function(){}); } catch(e){} }
+beat(); setInterval(beat, 15000);
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
